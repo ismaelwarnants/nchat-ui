@@ -14,6 +14,8 @@ legacy="$HOME/.local/opt/nchat-ui"   # layout of the shared-library build
 if [ "${1:-}" = "--uninstall" ]; then
   rm -rf "$legacy" "$bindir/nchat-ui" "$appdir/nchat-ui.desktop" "$icondir/nchat-ui.svg"
   rm -f "$HOME"/.local/share/icons/hicolor/*/apps/nchat-ui.png
+  update-desktop-database "$appdir" >/dev/null 2>&1 || true
+  gtk-update-icon-cache -q -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
   echo "Removed nchat-ui (your accounts in ~/.config/nchat are untouched)."
   exit 0
 fi
@@ -49,6 +51,6 @@ done
 sed "s#^Exec=nchat-ui#Exec=$exec_path#" packaging/nchat-ui.desktop > "$appdir/nchat-ui.desktop"
 
 update-desktop-database "$appdir" >/dev/null 2>&1 || true
-gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+gtk-update-icon-cache -q -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 echo "Installed $exec_path"
 echo "Start it from your app menu (nchat-ui) or by running: nchat-ui"
