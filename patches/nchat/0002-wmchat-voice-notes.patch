@@ -1,0 +1,82 @@
+nchat-ui patch: send recordings as WhatsApp voice notes.
+
+nchat sends any audio file as a plain AudioMessage, so a recording shows up on the other
+side as an audio file. WhatsApp voice notes are AudioMessages with PTT=true, a duration and
+a waveform. nchat-ui writes a sidecar "<file>.voicenote" (JSON: seconds + 64-value
+waveform) next to each recording; when that sidecar exists, the message is sent as a voice
+note. Other audio files are unchanged.
+
+- voicenote.go (new): read the sidecar and set PTT, Seconds, Waveform, Opus mimetype.
+- gowm.go: call it when building an AudioMessage.
+
+Applied automatically by nchat-ui's build.rs; candidate for an upstream PR to nchat.
+---
+diff --git a/lib/wmchat/go/gowm.go b/lib/wmchat/go/gowm.go
+index 21b0934f..fc3aca88 100644
+--- a/lib/wmchat/go/gowm.go
++++ b/lib/wmchat/go/gowm.go
+@@ -3572,6 +3572,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
+ 				FileLength:    proto.Uint64(uint64(len(data))),
+ 				ContextInfo:   &contextInfo,
+ 			}
++			ApplyVoiceNote(filePath, &audioMessage) // recorded voice note? (voicenote.go)
+ 
+ 			message.AudioMessage = &audioMessage
+ 			isSend = true
+diff --git a/lib/wmchat/go/voicenote.go b/lib/wmchat/go/voicenote.go
+new file mode 100644
+index 00000000..b765560b
+--- /dev/null
++++ b/lib/wmchat/go/voicenote.go
+@@ -0,0 +1,51 @@
++// voicenote.go
++//
++// Send recorded audio as a WhatsApp voice note ("PTT", push-to-talk) instead of an audio
++// file. A recording is marked by a sidecar file next to it, "<file>.voicenote", holding
++// JSON {"seconds": N, "waveform": [64 values 0..100]}. Voice notes must be Ogg/Opus.
++//
++// Added by nchat-ui (patches/nchat/0002-wmchat-voice-notes.patch).
++
++package main
++
++import (
++	"encoding/json"
++	"os"
++
++	"go.mau.fi/whatsmeow/proto/waE2E"
++	"google.golang.org/protobuf/proto"
++)
++
++type voiceNoteInfo struct {
++	Seconds  uint32 `json:"seconds"`
++	Waveform []int  `json:"waveform"`
++}
++
++// ApplyVoiceNote turns an AudioMessage into a voice note if filePath has a sidecar.
++func ApplyVoiceNote(filePath string, msg *waE2E.AudioMessage) {
++	data, err := os.ReadFile(filePath + ".voicenote")
++	if err != nil {
++		return
++	}
++	var info voiceNoteInfo
++	if err := json.Unmarshal(data, &info); err != nil {
++		LOG_WARNING("voice note: bad sidecar for " + filePath)
++		return
++	}
++	waveform := make([]byte, 0, len(info.Waveform))
++	for _, v := range info.Waveform {
++		if v < 0 {
++			v = 0
++		} else if v > 100 {
++			v = 100
++		}
++		waveform = append(waveform, byte(v))
++	}
++	msg.PTT = proto.Bool(true)
++	msg.Seconds = proto.Uint32(info.Seconds)
++	msg.Mimetype = proto.String("audio/ogg; codecs=opus")
++	if len(waveform) > 0 {
++		msg.Waveform = waveform
++	}
++	LOG_DEBUG("voice note: sending " + filePath + " as PTT")
++}

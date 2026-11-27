@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=nchat-ui
+GenericName=Chat
+Comment=WhatsApp and Telegram desktop client (nchat)
+Exec=nchat-ui
+Icon=nchat-ui
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+Keywords=WhatsApp;Telegram;chat;messenger;nchat;
+StartupWMClass=nchat-ui
+StartupNotify=true

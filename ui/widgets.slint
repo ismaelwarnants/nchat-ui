@@ -1,0 +1,133 @@
+// Small reusable widgets.
+
+import { Theme } from "theme.slint";
+
+export component Avatar inherits Rectangle {
+    in property <string> initials;
+    in property <color> avatar-color;
+    in property <length> size: Theme.sz(46);
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: avatar-color;
+    Text {
+        text: initials;
+        color: white;
+        font-size: size * 0.38;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> tooltip;
+    in property <length> size: Theme.sz(38);
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+    in property <bool> active: false;
+    callback clicked();
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: primary ? (ta.has-hover ? Theme.accent.darker(10%) : Theme.accent)
+                        : (ta.has-hover || active ? Theme.hover : transparent);
+    opacity: enabled ? 1 : 0.4;
+    Text {
+        text: icon;
+        font-size: size * 0.46;
+        color: primary ? white : (active ? Theme.accent : Theme.text-muted);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { if (root.enabled) { root.clicked(); } }
+    }
+    if root.tooltip != "": Tooltip {
+        text: @markdown("\{root.tooltip}");
+    }
+}
+
+export component PrimaryButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> danger: false;
+    in property <bool> secondary: false;
+    callback clicked();
+    height: Theme.sz(38);
+    min-width: Theme.sz(90);
+    border-radius: self.height / 2;
+    background: !enabled ? Theme.badge-muted
+              : secondary ? (ta.has-hover ? Theme.hover.darker(4%) : Theme.hover)
+              : danger ? (ta.has-hover ? Theme.danger.darker(12%) : Theme.danger)
+              : (ta.has-hover ? Theme.accent.darker(12%) : Theme.accent);
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        Text {
+            text: root.text;
+            color: secondary ? Theme.text : white;
+            font-size: Theme.fs(14);
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { if (root.enabled) { root.clicked(); } } }
+}
+
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked();
+    height: Theme.sz(30);
+    border-radius: self.height / 2;
+    background: selected ? Theme.accent.with-alpha(0.18) : (ta.has-hover ? Theme.hover : Theme.input-bg);
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        Text {
+            text: root.text;
+            font-size: Theme.fs(13);
+            font-weight: selected ? 600 : 400;
+            color: selected ? Theme.accent : Theme.text-muted;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// One row of a popup menu
+export component MenuRow inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> danger: false;
+    callback clicked();
+    height: Theme.sz(38);
+    background: ta.has-hover ? Theme.hover : transparent;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 18px;
+        spacing: 12px;
+        Text { text: root.icon; width: Theme.sz(20); font-size: Theme.fs(15); color: danger ? Theme.danger : Theme.text-muted; vertical-alignment: center; horizontal-alignment: center; }
+        Text { text: root.text; font-size: Theme.fs(14); color: danger ? Theme.danger : Theme.text; vertical-alignment: center; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component MenuSurface inherits Rectangle {
+    background: Theme.panel-bg;
+    border-radius: 10px;
+    drop-shadow-blur: 14px;
+    drop-shadow-color: #00000040;
+    clip: true;
+}
+
+// Dimmed full-window backdrop for dialogs; clicking it calls dismissed()
+export component Backdrop inherits Rectangle {
+    callback dismissed();
+    background: #00000066;
+    TouchArea { clicked => { root.dismissed(); } }
+}

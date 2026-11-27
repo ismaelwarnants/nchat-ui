@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>nchat-ui</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>nchat-ui</name>
+  <summary>WhatsApp and Telegram desktop client built on nchat</summary>
+  <description>
+    <p>
+      A lightweight desktop chat client with a familiar chat-list and conversation layout.
+      It runs nchat's WhatsApp and Telegram backends in-process and shows them in a native
+      window: chats, replies, reactions, media and stickers, search, notifications with
+      actions, a top-bar icon and an optional background mode.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/ismaelwarnants/nchat-ui</url>
+  <url type="bugtracker">https://github.com/ismaelwarnants/nchat-ui/issues</url>
+  <launchable type="desktop-id">nchat-ui.desktop</launchable>
+  <categories>
+    <category>Network</category>
+    <category>InstantMessaging</category>
+  </categories>
+  <developer id="nchat-ui"><name>nchat-ui contributors</name></developer>
+  <content_rating type="oars-1.1"/>
+</component>

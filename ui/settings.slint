@@ -1,0 +1,378 @@
+// Settings panel. Values live in SettingsState (two-way); every edit calls
+// SettingsState.changed() and Rust applies + saves them (src/settings.rs).
+
+import { ComboBox, Slider, Switch, ScrollView, LineEdit } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { PrimaryButton, IconButton } from "widgets.slint";
+
+export struct AccountItem {
+    id: string,
+    label: string,
+    status: string,
+}
+
+export global SettingsState {
+    in property <bool> visible: false;
+    // appearance
+    in-out property <int> theme-mode: 0;
+    in-out property <string> accent: "#3a76f0";
+    in-out property <string> font-family: "";
+    in property <[string]> font-families: ["Default"];
+    in-out property <int> font-family-index: 0;
+    in-out property <float> font-size: 14;
+    in property <[string]> emoji-fonts: ["Automatic"];
+    in-out property <int> emoji-font-index: 0;
+    in-out property <string> emoji-font: "";
+    in-out property <bool> compact: false;
+    in-out property <float> bubble-radius: 14;
+    in-out property <string> chat-background: "";
+    in-out property <string> bubble-color: "";
+    // chats
+    in-out property <bool> enter-sends: true;
+    in-out property <bool> time-24h: true;
+    in-out property <int> auto-download: 2;
+    in-out property <bool> show-archived-in-list: false;
+    // privacy
+    in-out property <bool> mark-read-on-view: true;
+    in-out property <bool> share-online: true;
+    in-out property <bool> share-typing: true;
+    // app
+    in-out property <bool> run-in-background: false;
+    in-out property <bool> start-at-login: false;
+    in property <bool> tray-available: true;
+    in-out property <bool> x11-window: true;
+    // notifications
+    in-out property <bool> notifications: true;
+    in-out property <bool> notification-preview: true;
+    // accounts / about
+    in property <[AccountItem]> accounts;
+    in property <string> about;
+    in property <string> settings-path;
+
+    callback changed();
+    callback reset();
+    callback close();
+    callback add-account();
+    callback remove-account(string);
+    callback open-log();
+    callback open-downloads();
+}
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    spacing: 10px;
+    padding-top: 10px;
+    Text { text: root.title; font-size: Theme.fs(12.5); font-weight: 700; color: Theme.accent; }
+    @children
+}
+
+component Row inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> hint;
+    spacing: 12px;
+    min-height: Theme.sz(36);
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        Text { text: root.label; font-size: Theme.fs(14); color: Theme.text; wrap: word-wrap; }
+        if root.hint != "": Text { text: root.hint; font-size: Theme.fs(12); color: Theme.text-muted; wrap: word-wrap; }
+    }
+    @children
+}
+
+component Swatch inherits Rectangle {
+    in property <color> swatch;
+    in property <bool> selected;
+    in property <string> label;
+    callback clicked();
+    width: Theme.sz(30);
+    height: Theme.sz(30);
+    border-radius: self.width / 2;
+    background: swatch;
+    border-width: selected ? 3px : 1px;
+    border-color: selected ? Theme.text : Theme.divider;
+    if label != "": Text { text: label; font-size: Theme.fs(10); color: Theme.text-muted; horizontal-alignment: center; vertical-alignment: center; }
+    TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component Segmented inherits Rectangle {
+    in property <[string]> options;
+    in-out property <int> current;
+    callback picked();
+    height: Theme.sz(32);
+    border-radius: 8px;
+    background: Theme.input-bg;
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 3px;
+        for o[i] in root.options: Rectangle {
+            border-radius: 6px;
+            background: i == root.current ? Theme.panel-bg : (ta.has-hover ? Theme.hover : transparent);
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                Text { text: o; font-size: Theme.fs(13); color: i == root.current ? Theme.text : Theme.text-muted; vertical-alignment: center; horizontal-alignment: center; }
+            }
+            ta := TouchArea { mouse-cursor: pointer; clicked => { root.current = i; root.picked(); } }
+        }
+    }
+}
+
+export component SettingsView inherits Rectangle {
+    background: Theme.app-bg;
+    TouchArea { }
+
+    property <[color]> accents: [#3a76f0, #1fa855, #8e5cf6, #e5484d, #f08c00, #0ea5b5, #d6409f, #52606d];
+    property <[string]> accent-hex: ["#3a76f0", "#1fa855", "#8e5cf6", "#e5484d", "#f08c00", "#0ea5b5", "#d6409f", "#52606d"];
+    property <[color]> backgrounds: [#e6ebf2, #efeae2, #f4f1ea, #e8f0e8, #0e1621, #101d25, #1b1b1f, #20183a];
+    property <[string]> background-hex: ["#e6ebf2", "#efeae2", "#f4f1ea", "#e8f0e8", "#0e1621", "#101d25", "#1b1b1f", "#20183a"];
+    property <[color]> bubbles: [#d7e6ff, #d9fdd3, #fde2cf, #ead7ff, #2b5278, #005c4b, #4a3b6b, #3b3b45];
+    property <[string]> bubble-hex: ["#d7e6ff", "#d9fdd3", "#fde2cf", "#ead7ff", "#2b5278", "#005c4b", "#4a3b6b", "#3b3b45"];
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        width: min(parent.width, 680px);
+        background: Theme.panel-bg;
+
+        VerticalLayout {
+            // header
+            HorizontalLayout {
+                padding: 14px;
+                padding-left: 20px;
+                spacing: 10px;
+                height: Theme.sz(62);
+                Text { text: "Settings"; font-size: Theme.fs(20); font-weight: 700; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+                IconButton { icon: "✕"; tooltip: "Close"; clicked => { SettingsState.close(); } }
+            }
+            Rectangle { height: 1px; background: Theme.divider; }
+
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    padding: 20px;
+                    padding-top: 6px;
+                    spacing: 14px;
+
+                    Section {
+                        title: "APPEARANCE";
+                        Row {
+                            label: "Theme";
+                            Segmented {
+                                options: ["System", "Light", "Dark"];
+                                current <=> SettingsState.theme-mode;
+                                picked => { SettingsState.changed(); }
+                            }
+                        }
+                        Row {
+                            label: "Accent colour";
+                            HorizontalLayout {
+                                spacing: 6px;
+                                for c[i] in root.accents: Swatch {
+                                    swatch: c;
+                                    selected: SettingsState.accent == root.accent-hex[i];
+                                    clicked => { SettingsState.accent = root.accent-hex[i]; SettingsState.changed(); }
+                                }
+                            }
+                        }
+                        Row {
+                            label: "Custom accent";
+                            hint: "Any colour as #rrggbb";
+                            LineEdit {
+                                width: 120px;
+                                text: SettingsState.accent;
+                                accepted(t) => { SettingsState.accent = t; SettingsState.changed(); }
+                            }
+                        }
+                        Row {
+                            label: "Font";
+                            ComboBox {
+                                width: 240px;
+                                model: SettingsState.font-families;
+                                current-index <=> SettingsState.font-family-index;
+                                selected(v) => {
+                                    SettingsState.font-family = self.current-index == 0 ? "" : v;
+                                    SettingsState.changed();
+                                }
+                            }
+                        }
+                        Row {
+                            label: "Emoji style";
+                            hint: "Any colour emoji font installed on your system; applies after restarting the app";
+                            ComboBox {
+                                width: 240px;
+                                model: SettingsState.emoji-fonts;
+                                current-index <=> SettingsState.emoji-font-index;
+                                selected(v) => {
+                                    SettingsState.emoji-font = self.current-index == 0 ? "" : v;
+                                    SettingsState.changed();
+                                }
+                            }
+                        }
+                        Row {
+                            label: "Text size";
+                            hint: round(SettingsState.font-size) + " px";
+                            Slider {
+                                width: 240px;
+                                minimum: 11;
+                                maximum: 20;
+                                value <=> SettingsState.font-size;
+                                released => { SettingsState.font-size = round(SettingsState.font-size); SettingsState.changed(); }
+                            }
+                        }
+                        Row {
+                            label: "Bubble roundness";
+                            Slider {
+                                width: 240px;
+                                minimum: 0;
+                                maximum: 22;
+                                value <=> SettingsState.bubble-radius;
+                                released => { SettingsState.bubble-radius = round(SettingsState.bubble-radius); SettingsState.changed(); }
+                            }
+                        }
+                        Row {
+                            label: "Compact chat list";
+                            Switch { checked <=> SettingsState.compact; toggled => { SettingsState.changed(); } }
+                        }
+                        Row {
+                            label: "Chat background";
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Swatch {
+                                    swatch: Theme.dark ? #0e1621 : #e6ebf2;
+                                    label: "Auto";
+                                    selected: SettingsState.chat-background == "";
+                                    clicked => { SettingsState.chat-background = ""; SettingsState.changed(); }
+                                }
+                                for c[i] in root.backgrounds: Swatch {
+                                    swatch: c;
+                                    selected: SettingsState.chat-background == root.background-hex[i];
+                                    clicked => { SettingsState.chat-background = root.background-hex[i]; SettingsState.changed(); }
+                                }
+                            }
+                        }
+                        Row {
+                            label: "My message bubbles";
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Swatch {
+                                    swatch: Theme.accent.mix(Theme.dark ? #0e1621 : #ffffff, Theme.dark ? 0.45 : 0.2);
+                                    label: "Auto";
+                                    selected: SettingsState.bubble-color == "";
+                                    clicked => { SettingsState.bubble-color = ""; SettingsState.changed(); }
+                                }
+                                for c[i] in root.bubbles: Swatch {
+                                    swatch: c;
+                                    selected: SettingsState.bubble-color == root.bubble-hex[i];
+                                    clicked => { SettingsState.bubble-color = root.bubble-hex[i]; SettingsState.changed(); }
+                                }
+                            }
+                        }
+                    }
+
+                    Section {
+                        title: "CHATS";
+                        Row {
+                            label: "Enter sends the message";
+                            hint: SettingsState.enter-sends ? "Shift+Enter for a new line" : "Ctrl+Enter sends, Enter adds a new line";
+                            Switch { checked <=> SettingsState.enter-sends; toggled => { SettingsState.changed(); } }
+                        }
+                        Row {
+                            label: "24-hour time";
+                            Switch { checked <=> SettingsState.time-24h; toggled => { SettingsState.changed(); } }
+                        }
+                        Row {
+                            label: "Download media automatically";
+                            hint: "Older WhatsApp media may no longer be downloadable";
+                            ComboBox {
+                                width: 220px;
+                                model: ["Never", "Photos", "Photos and audio", "All files"];
+                                current-index <=> SettingsState.auto-download;
+                                selected => { SettingsState.changed(); }
+                            }
+                        }
+                        Row {
+                            label: "Show archived chats in the list";
+                            Switch { checked <=> SettingsState.show-archived-in-list; toggled => { SettingsState.changed(); } }
+                        }
+                    }
+
+                    Section {
+                        title: "PRIVACY";
+                        Row {
+                            label: "Send read receipts";
+                            hint: "Mark messages as read when you open a chat";
+                            Switch { checked <=> SettingsState.mark-read-on-view; toggled => { SettingsState.changed(); } }
+                        }
+                        Row {
+                            label: "Share online status";
+                            hint: "Takes effect at next start";
+                            Switch { checked <=> SettingsState.share-online; toggled => { SettingsState.changed(); } }
+                        }
+                        Row {
+                            label: "Share typing status";
+                            Switch { checked <=> SettingsState.share-typing; toggled => { SettingsState.changed(); } }
+                        }
+                    }
+
+                    Section {
+                        title: "APP";
+                        Row {
+                            label: "Keep running in the background";
+                            hint: SettingsState.tray-available
+                                ? "Closing the window keeps receiving messages and notifications. Reopen it from the icon in the top bar, or by starting nchat-ui again"
+                                : "Closing the window keeps receiving messages. No tray support was found, so reopen it by starting nchat-ui again";
+                            Switch { checked <=> SettingsState.run-in-background; toggled => { SettingsState.changed(); } }
+                        }
+                        Row {
+                            label: "Allow dragging files into the window";
+                            hint: "Runs the window through X11 (XWayland): the Wayland support in the UI toolkit can't receive dropped files yet. Applies after restarting the app";
+                            Switch { checked <=> SettingsState.x11-window; toggled => { SettingsState.changed(); } }
+                        }
+                        Row {
+                            label: "Start when I log in";
+                            hint: "Starts in the background (no window) when you log in to your computer";
+                            Switch { checked <=> SettingsState.start-at-login; toggled => { SettingsState.changed(); } }
+                        }
+                    }
+
+                    Section {
+                        title: "NOTIFICATIONS";
+                        Row {
+                            label: "Desktop notifications";
+                            Switch { checked <=> SettingsState.notifications; toggled => { SettingsState.changed(); } }
+                        }
+                        Row {
+                            label: "Show message text in notifications";
+                            Switch { checked <=> SettingsState.notification-preview; toggled => { SettingsState.changed(); } }
+                        }
+                    }
+
+                    Section {
+                        title: "ACCOUNTS";
+                        for a in SettingsState.accounts: Row {
+                            label: a.label;
+                            hint: a.status;
+                            PrimaryButton { text: "Remove"; danger: true; clicked => { SettingsState.remove-account(a.id); } }
+                        }
+                        HorizontalLayout {
+                            alignment: start;
+                            PrimaryButton { text: "＋ Add account"; clicked => { SettingsState.add-account(); } }
+                        }
+                    }
+
+                    Section {
+                        title: "ABOUT";
+                        Text { text: SettingsState.about; font-size: Theme.fs(12.5); color: Theme.text-muted; wrap: word-wrap; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            PrimaryButton { text: "Open nchat log"; secondary: true; clicked => { SettingsState.open-log(); } }
+                            PrimaryButton { text: "Open downloads"; secondary: true; clicked => { SettingsState.open-downloads(); } }
+                            PrimaryButton { text: "Reset settings"; secondary: true; clicked => { SettingsState.reset(); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

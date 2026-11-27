@@ -1,0 +1,56 @@
+import { Palette } from "std-widgets.slint";
+
+// Colours and sizes. Everything user-adjustable is set from Rust (settings.rs).
+export global Theme {
+    // 0 = follow system, 1 = light, 2 = dark
+    in property <int> mode: 0;
+    out property <bool> dark: mode == 0 ? Palette.color-scheme == ColorScheme.dark : mode == 2;
+
+    in property <color> accent-base: #3a76f0;
+    in property <float> font-scale: 1.0;
+    in property <string> font-family: "";
+    in property <bool> compact: false;
+    in property <length> radius: 14px;
+    in property <bool> has-chat-bg: false;
+    in property <color> chat-bg-custom: #e6ebf2;
+    in property <bool> has-bubble-color: false;
+    in property <color> bubble-color-custom: #d7e6ff;
+    // set from Rust from the custom colour's luminance
+    in property <bool> bubble-color-custom-is-dark: false;
+
+    out property <color> accent: dark ? accent-base.brighter(12%) : accent-base;
+    out property <color> app-bg: dark ? #0e1621 : #e9eef5;
+    out property <color> sidebar-bg: dark ? #17212b : #ffffff;
+    out property <color> header-bg: dark ? #17212b : #ffffff;
+    out property <color> panel-bg: dark ? #17212b : #ffffff;
+    out property <color> chat-bg: has-chat-bg ? chat-bg-custom : (dark ? #0e1621 : #e6ebf2);
+    out property <color> hover: dark ? #202b36 : #f1f4f8;
+    out property <color> selected: dark ? accent-base.mix(#17212b, 0.55) : accent-base;
+    out property <color> text: dark ? #e9edef : #111b21;
+    out property <color> text-muted: dark ? #8a9aa9 : #6b7a86;
+    out property <color> text-on-selected: #ffffff;
+    out property <color> bubble-in: dark ? #182533 : #ffffff;
+    out property <color> bubble-out: has-bubble-color ? bubble-color-custom
+                                     : (dark ? accent-base.mix(#0e1621, 0.45) : accent-base.mix(#ffffff, 0.2));
+    out property <color> bubble-text: dark ? #e9edef : #111b21;
+    out property <bool> bubble-out-dark: has-bubble-color ? bubble-color-custom-is-dark : dark;
+    out property <color> bubble-out-text: bubble-out-dark ? #e9edef : #111b21;
+    out property <color> bubble-out-muted: bubble-out-dark ? #b4c0ca : #5f6e7a;
+    out property <color> quote-bg: dark ? #ffffff14 : #0000000d;
+    out property <color> divider: dark ? #0b1118 : #dde3ea;
+    out property <color> input-bg: dark ? #242f3d : #f1f4f8;
+    out property <color> badge: accent;
+    out property <color> badge-muted: dark ? #4b5866 : #a6b2bd;
+    out property <color> read-tick: dark ? #7cc0ff : accent;
+    out property <color> danger: #e5484d;
+    out property <color> highlight: dark ? #f5c54233 : #f5c54266;
+
+    // text size scaled by the user's font size setting
+    public pure function fs(px: float) -> length {
+        return px * font-scale * 1px;
+    }
+    // layout sizes follow the font size too (a bit less than linearly)
+    public pure function sz(px: float) -> length {
+        return px * (1 + (font-scale - 1) * 0.8) * 1px;
+    }
+}

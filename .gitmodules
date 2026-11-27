@@ -1,0 +1,4 @@
+[submodule "nchat"]
+	path = nchat
+	url = https://github.com/d99kris/nchat.git
+	ignore = dirty

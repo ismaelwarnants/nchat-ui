@@ -1,0 +1,31 @@
+nchat-ui
+========
+
+Copyright (c) 2026 nchat-ui contributors
+Copyright (c) 2019-2026 Kristofer Berggren (nchat)
+
+nchat-ui is a desktop UI for nchat (https://github.com/d99kris/nchat).
+Source: https://github.com/ismaelwarnants/nchat-ui
+nchat-ui is an independent project, not affiliated with nchat.
+
+Licensing of this binary
+------------------------
+This binary is a combined work. It contains:
+
+- nchat-ui (UI and glue code)                     MIT
+- nchat (Kristofer Berggren), lightly patched      MIT
+  (patches/nchat/*.patch in the nchat-ui sources)
+- whatsmeow + libsignal (WhatsApp protocol)        MPL-2.0 / GPL-3.0
+- tdlib (Telegram protocol)                        BSL-1.0
+- Slint UI toolkit                                 GPL-3.0 (or Slint royalty-free licence)
+- libopus, Rust crates                             BSD / MIT / Apache-2.0
+
+Because libsignal is licensed under the GNU GPL v3, this binary as a whole is
+distributed under the terms of the GNU General Public License, version 3
+(see /usr/share/licenses/nchat-ui/LICENSE or LICENSE.GPL-3.0).
+On Debian systems, the complete text of the GNU General Public License version 3
+can be found in /usr/share/common-licenses/GPL-3. Anyone receiving
+this binary is entitled to the complete corresponding source code, including the
+nchat-ui sources and the nchat patches.
+
+Third-party notices for nchat and its bundled libraries: THIRD_PARTY_LICENSES.

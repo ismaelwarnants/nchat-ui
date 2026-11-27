@@ -1,0 +1,307 @@
+// Account setup wizard. It drives nchat's own setup code: the protocol menu is answered
+// automatically, nchat's prompts become form fields, and QR codes are shown here.
+
+import { CheckBox, ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+
+export struct SetupProto {
+    id: string,
+    name: string,
+    icon: string,
+    color: color,
+    hint: string,
+}
+
+export global SetupState {
+    in property <bool> visible: false;
+    // 0 = choose account type, 1 = running nchat setup
+    in property <int> step: 0;
+    in property <[SetupProto]> protocols;
+    in-out property <bool> use-code: false;
+    in property <bool> can-cancel: true;
+    in property <bool> first-run: true;
+    in property <string> title;
+    in property <string> info;
+    in property <bool> has-qr: false;
+    in property <image> qr;
+    in property <string> code;
+    in property <bool> has-prompt: false;
+    in property <string> prompt-label;
+    in property <string> prompt-placeholder;
+    in property <bool> prompt-secret: false;
+    in property <bool> prompt-enter-only: false;
+    in property <int> prompt-token: 0;
+    in property <string> error;
+    in property <string> status;
+    in property <string> log;
+
+    callback choose(string /* protocol id */);
+    callback submit(string /* value */);
+    callback cancel();
+}
+
+component PrimaryButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 42px;
+    min-width: 120px;
+    border-radius: 21px;
+    background: !enabled ? Theme.badge-muted : (ta.has-hover ? Theme.accent.darker(12%) : Theme.accent);
+    HorizontalLayout {
+        padding-left: 22px;
+        padding-right: 22px;
+        Text { text: root.text; color: white; font-size: Theme.fs(14.5); font-weight: 600; vertical-alignment: center; horizontal-alignment: center; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { if (root.enabled) { root.clicked(); } } }
+}
+
+component LinkButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    height: 32px;
+    HorizontalLayout {
+        Text {
+            text: root.text;
+            color: ta.has-hover ? Theme.accent : Theme.text-muted;
+            font-size: Theme.fs(13.5);
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component ProtoRow inherits Rectangle {
+    in property <SetupProto> proto;
+    callback clicked();
+    height: 68px;
+    border-radius: 14px;
+    background: ta.has-hover ? Theme.hover : Theme.input-bg;
+    HorizontalLayout {
+        padding: 12px;
+        padding-left: 14px;
+        spacing: 14px;
+        Rectangle {
+            width: 44px;
+            height: 44px;
+            border-radius: 22px;
+            background: proto.color;
+            Text { text: proto.icon; color: white; font-size: Theme.fs(20); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text { text: proto.name; font-size: Theme.fs(16); font-weight: 600; color: Theme.text; }
+            Text { text: proto.hint; font-size: Theme.fs(12.5); color: Theme.text-muted; overflow: elide; }
+        }
+        Text { text: "›"; font-size: Theme.fs(26); color: Theme.text-muted; vertical-alignment: center; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component PromptField inherits VerticalLayout {
+    // a new prompt (even with the same label) clears and focuses the field
+    property <int> token: SetupState.prompt-token;
+    changed token => {
+        prompt-input.text = "";
+        prompt-input.focus();
+    }
+    init => { prompt-input.focus(); }
+
+    spacing: 6px;
+    Text { text: SetupState.prompt-label; font-size: Theme.fs(13); font-weight: 600; color: Theme.text; }
+    HorizontalLayout {
+        spacing: 10px;
+        Rectangle {
+            height: 42px;
+            border-radius: 10px;
+            background: Theme.input-bg;
+            border-width: prompt-input.has-focus ? 2px : 0px;
+            border-color: Theme.accent;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                prompt-input := TextInput {
+                    font-size: Theme.fs(15);
+                    color: Theme.text;
+                    vertical-alignment: center;
+                    single-line: true;
+                    input-type: SetupState.prompt-secret ? InputType.password : InputType.text;
+                    accepted => { SetupState.submit(self.text); }
+                    Text {
+                        visible: prompt-input.text == "";
+                        x: 0;
+                        width: parent.width;
+                        height: parent.height;
+                        text: SetupState.prompt-placeholder;
+                        color: Theme.text-muted;
+                        font-size: Theme.fs(15);
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+        PrimaryButton {
+            text: "Continue";
+            clicked => { SetupState.submit(prompt-input.text); }
+        }
+    }
+}
+
+export component SetupView inherits Rectangle {
+    background: Theme.app-bg;
+
+    // swallow clicks so nothing behind the wizard reacts
+    TouchArea { }
+
+    property <bool> show-log: false;
+
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: max(16px, (parent.height - self.height) / 2);
+        width: min(parent.width - 32px, 520px);
+        height: min(parent.height - 32px, card.preferred-height);
+        border-radius: 20px;
+        background: Theme.sidebar-bg;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: #00000030;
+        clip: true;
+
+        card := VerticalLayout {
+            padding: 28px;
+            spacing: 14px;
+
+            // ---------- header ----------
+            HorizontalLayout {
+                spacing: 12px;
+                Image { source: @image-url("icon.svg"); width: 40px; height: 40px; }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: SetupState.step == 0 ? (SetupState.first-run ? "Welcome to nchat-ui" : "Add an account") : SetupState.title;
+                        font-size: Theme.fs(21);
+                        font-weight: 700;
+                        color: Theme.text;
+                    }
+                    if SetupState.step == 0: Text {
+                        text: "Connect an account to start chatting";
+                        font-size: Theme.fs(13.5);
+                        color: Theme.text-muted;
+                    }
+                }
+            }
+
+            // ---------- step 0: choose account type ----------
+            if SetupState.step == 0: VerticalLayout {
+                spacing: 10px;
+                for p in SetupState.protocols: ProtoRow {
+                    proto: p;
+                    clicked => { SetupState.choose(p.id); }
+                }
+                CheckBox {
+                    text: "Use phone number + code instead of a QR code";
+                    checked <=> SetupState.use-code;
+                }
+                Text {
+                    text: "Your accounts, history and settings are shared with the terminal nchat (~/.config/nchat).";
+                    wrap: word-wrap;
+                    font-size: Theme.fs(12);
+                    color: Theme.text-muted;
+                }
+                if SetupState.can-cancel: LinkButton { text: "Cancel"; clicked => { SetupState.cancel(); } }
+            }
+
+            // ---------- step 1: running nchat's setup ----------
+            if SetupState.step == 1: VerticalLayout {
+                spacing: 14px;
+
+                if SetupState.has-qr: Rectangle {
+                    height: 276px;
+                    Rectangle {
+                        x: (parent.width - self.width) / 2;
+                        width: 276px;
+                        height: 276px;
+                        border-radius: 14px;
+                        background: white;
+                        Image {
+                            x: 10px;
+                            y: 10px;
+                            width: 256px;
+                            height: 256px;
+                            source: SetupState.qr;
+                            image-rendering: pixelated;
+                        }
+                    }
+                }
+
+                if SetupState.code != "": VerticalLayout {
+                    spacing: 4px;
+                    Text { text: "Enter this code on your phone"; font-size: Theme.fs(13); color: Theme.text-muted; horizontal-alignment: center; }
+                    Text {
+                        text: SetupState.code;
+                        font-size: Theme.fs(34);
+                        font-weight: 700;
+                        letter-spacing: 4px;
+                        color: Theme.text;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                if SetupState.info != "": Text {
+                    text: SetupState.info;
+                    wrap: word-wrap;
+                    font-size: Theme.fs(13.5);
+                    color: Theme.text;
+                }
+
+                if SetupState.has-prompt && !SetupState.prompt-enter-only: PromptField { }
+
+                if SetupState.has-prompt && SetupState.prompt-enter-only: HorizontalLayout {
+                    alignment: center;
+                    PrimaryButton { text: "Continue"; clicked => { SetupState.submit(""); } }
+                }
+
+                if SetupState.error != "": Text {
+                    text: SetupState.error;
+                    wrap: word-wrap;
+                    font-size: Theme.fs(13);
+                    color: #e5484d;
+                }
+
+                if SetupState.status != "": Text {
+                    text: SetupState.status;
+                    font-size: Theme.fs(13);
+                    color: Theme.text-muted;
+                    horizontal-alignment: center;
+                }
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    LinkButton { text: show-log ? "Hide details" : "Show details"; clicked => { show-log = !show-log; } }
+                    if SetupState.can-cancel: LinkButton { text: "Cancel"; clicked => { SetupState.cancel(); } }
+                }
+
+                if show-log: Rectangle {
+                    height: 150px;
+                    border-radius: 10px;
+                    background: Theme.input-bg;
+                    ScrollView {
+                        VerticalLayout {
+                            padding: 10px;
+                            Text {
+                                text: SetupState.log;
+                                font-family: "monospace";
+                                font-size: Theme.fs(11.5);
+                                wrap: word-wrap;
+                                color: Theme.text-muted;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

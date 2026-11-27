@@ -1,0 +1,7 @@
+target/
+target-dev/
+build-cmake/
+dist/
+packaging/appimage-runtime-*
+*.part
+drafts/

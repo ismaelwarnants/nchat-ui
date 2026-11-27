@@ -1,0 +1,41 @@
+.TH NCHAT-UI 1 "2026" "nchat-ui" "User Commands"
+.SH NAME
+nchat-ui \- WhatsApp and Telegram desktop client built on nchat
+.SH SYNOPSIS
+.B nchat-ui
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+Desktop chat client that runs nchat's WhatsApp and Telegram backends in-process and
+shows them in a window. Accounts are added from the window (QR code or phone number
+and code). Accounts, history and settings are shared with the terminal client
+\fBnchat\fR(1); only one of them can use the same config directory at a time.
+.SH OPTIONS
+.TP
+\fB\-d\fR, \fB\-\-confdir\fR \fIDIR\fR
+Use a different config directory (default ~/.config/nchat).
+.TP
+\fB\-s\fR, \fB\-\-setup\fR
+Open the "add account" wizard.
+.TP
+\fB\-b\fR, \fB\-\-background\fR
+Start without a window (top-bar icon and notifications only).
+.TP
+\fB\-e\fR, \fB\-\-verbose\fR
+Verbose logging to <confdir>/log.txt.
+.TP
+\fB\-r\fR, \fB\-\-remove\fR
+Remove an account (prompts in the terminal).
+.TP
+\fB\-x\fR, \fB\-\-export\fR \fIDIR\fR
+Export the message cache to DIR.
+.TP
+\fB\-v\fR, \fB\-\-version\fR
+Show version information.
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Show help.
+.SH FILES
+~/.config/nchat/ (accounts and history), ~/.config/nchat-ui/settings.conf (UI settings),
+~/.config/autostart/nchat-ui.desktop (start at login).
+.SH SEE ALSO
+\fBnchat\fR(1)

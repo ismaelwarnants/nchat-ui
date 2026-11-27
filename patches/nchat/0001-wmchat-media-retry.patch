@@ -1,0 +1,301 @@
+nchat-ui patch: media retry for WhatsApp attachments the media servers no longer serve.
+
+Media received through WhatsApp's history sync (everything from before the device was
+linked) usually returns HTTP 404/410 from the media servers. WhatsApp Web then asks the
+phone to re-upload it ("media retry"); nchat didn't, so those attachments could never be
+downloaded. This adds that, using whatsmeow's SendMediaRetryReceipt / events.MediaRetry:
+
+- wmchat.cpp: look up the message's sender and direction (needed for the request) and
+  pass them to the Go side.
+- gowm.go: remember the download error; on 404/410 request a re-upload and report the
+  attachment as "downloading"; route events.MediaRetry to the handler.
+- mediaretry.go (new): request bookkeeping, 60 s timeout, decrypt the answer, download
+  from the new direct path, store the new path in the file id, notify the result.
+
+Applied automatically by nchat-ui's build.rs; candidate for an upstream PR to nchat.
+---
+diff --git a/lib/wmchat/go/cgowm.go b/lib/wmchat/go/cgowm.go
+index f6221fdc..35a56b1d 100644
+--- a/lib/wmchat/go/cgowm.go
++++ b/lib/wmchat/go/cgowm.go
+@@ -139,8 +139,8 @@ func CWmSendStatus(connId int, isOnline int) int {
+ }
+ 
+ //export CWmDownloadFile
+-func CWmDownloadFile(connId int, chatId *C.char, msgId *C.char, fileId *C.char, action int) int {
+-	return WmDownloadFile(connId, C.GoString(chatId), C.GoString(msgId), C.GoString(fileId), action)
++func CWmDownloadFile(connId int, chatId *C.char, msgId *C.char, fileId *C.char, senderId *C.char, fromMe int, action int) int {
++	return WmDownloadFile(connId, C.GoString(chatId), C.GoString(msgId), C.GoString(fileId), C.GoString(senderId), fromMe, action)
+ }
+ 
+ //export CWmSendReaction
+diff --git a/lib/wmchat/go/gowm.go b/lib/wmchat/go/gowm.go
+index 97076d83..21b0934f 100644
+--- a/lib/wmchat/go/gowm.go
++++ b/lib/wmchat/go/gowm.go
+@@ -570,6 +570,7 @@ func DownloadFromFileId(connId int, fileId string) (string, int) {
+ 		data, err := DownloadFromFileInfo(client, info)
+ 		if err != nil {
+ 			LOG_WARNING(fmt.Sprintf("download error %#v", err))
++			mediaDownloadErrors.Store(fileId, err) // for TryMediaRetry (mediaretry.go)
+ 			fileStatus = FileStatusDownloadFailed
+ 		} else {
+ 			file, err := os.Create(targetPath)
+@@ -1079,6 +1080,11 @@ func (handler *WmEventHandler) HandleEvent(rawEvt interface{}) {
+ 		LOG_TRACE(fmt.Sprintf("%#v", evt))
+ 		CWmClearStatus(handler.connId, FlagOnline)
+ 
++	case *events.MediaRetry:
++		// phone answered a media re-upload request (mediaretry.go)
++		LOG_TRACE(fmt.Sprintf("%#v", evt))
++		go HandleMediaRetry(handler.connId, evt)
++
+ 	case *events.StreamReplaced:
+ 		// TODO: find out when exactly this happens and how to handle it
+ 		LOG_TRACE(fmt.Sprintf("%#v", evt))
+@@ -4181,7 +4187,7 @@ func WmSendStatus(connId int, isOnline int) int {
+ 	return 0
+ }
+ 
+-func WmDownloadFile(connId int, chatId string, msgId string, fileId string, action int) int {
++func WmDownloadFile(connId int, chatId string, msgId string, fileId string, senderId string, fromMe int, action int) int {
+ 
+ 	LOG_TRACE("download file " + strconv.Itoa(connId) + ", " + chatId + ", " + msgId + ", " + fileId)
+ 
+@@ -4194,6 +4200,13 @@ func WmDownloadFile(connId int, chatId string, msgId string, fileId string, acti
+ 	// download file
+ 	filePath, fileStatus := DownloadFromFileId(connId, fileId)
+ 
++	// media gone from the server (e.g. from history sync): ask the phone to re-upload it,
++	// the result is notified when it arrives (mediaretry.go)
++	if fileStatus == FileStatusDownloadFailed &&
++		TryMediaRetry(connId, chatId, msgId, fileId, senderId, fromMe != 0, action) {
++		fileStatus = FileStatusDownloading
++	}
++
+ 	// notify result (pass fileId back so the attachment stays re-downloadable if its file is
+ 	// later removed, ex: when the profile tmp dir is cleared between sessions)
+ 	CWmNewMessageFileNotify(connId, chatId, msgId, fileId, filePath, fileStatus, action)
+diff --git a/lib/wmchat/go/mediaretry.go b/lib/wmchat/go/mediaretry.go
+new file mode 100644
+index 00000000..6b32abb4
+--- /dev/null
++++ b/lib/wmchat/go/mediaretry.go
+@@ -0,0 +1,190 @@
++// mediaretry.go
++//
++// Media retry for attachments WhatsApp's media servers no longer serve (HTTP 404/410),
++// typically media received through the history sync after linking a device. Like
++// WhatsApp Web, ask the phone to re-upload the file and download it from the new path.
++// See whatsmeow's Client.SendMediaRetryReceipt.
++//
++// Added by nchat-ui (patches/nchat/0001-wmchat-media-retry.patch).
++
++package main
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"os"
++	"sync"
++	"time"
++
++	"go.mau.fi/whatsmeow"
++	"go.mau.fi/whatsmeow/proto/waMmsRetry"
++	"go.mau.fi/whatsmeow/types"
++	"go.mau.fi/whatsmeow/types/events"
++)
++
++// how long to wait for the phone to re-upload (it must be online)
++const mediaRetryTimeout = 60 * time.Second
++
++type mediaRetryRequest struct {
++	connId int
++	chatId string
++	msgId  string
++	fileId string
++	info   DownloadInfo
++	action int
++	timer  *time.Timer
++}
++
++var mediaRetryMutex sync.Mutex
++var mediaRetryPending = make(map[string]*mediaRetryRequest) // by message id
++
++// last download error per fileId, set by DownloadFromFileId
++var mediaDownloadErrors sync.Map
++
++func isMediaGoneError(err error) bool {
++	return errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith404) ||
++		errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith410)
++}
++
++// TryMediaRetry is called after a failed download. It returns true if the phone was asked
++// to re-upload the media; the result is then reported asynchronously via
++// CWmNewMessageFileNotify.
++func TryMediaRetry(connId int, chatId string, msgId string, fileId string, senderId string, fromMe bool, action int) bool {
++	errVal, ok := mediaDownloadErrors.LoadAndDelete(fileId)
++	if !ok {
++		return false
++	}
++	if err, _ := errVal.(error); !isMediaGoneError(err) {
++		return false
++	}
++
++	var info DownloadInfo
++	if err := json.Unmarshal([]byte(fileId), &info); err != nil || len(info.MediaKey) == 0 {
++		LOG_WARNING(fmt.Sprintf("media retry: unusable file id for %s", msgId))
++		return false
++	}
++
++	client := GetClient(connId)
++	if client == nil {
++		return false
++	}
++
++	chatJid, err := types.ParseJID(chatId)
++	if err != nil {
++		LOG_WARNING(fmt.Sprintf("media retry: bad chat id %s", chatId))
++		return false
++	}
++	isGroup := chatJid.Server == types.GroupServer
++	var senderJid types.JID
++	if len(senderId) > 0 {
++		senderJid, _ = types.ParseJID(senderId)
++	}
++	if isGroup && senderJid.IsEmpty() {
++		LOG_WARNING(fmt.Sprintf("media retry: unknown sender for group message %s", msgId))
++		return false
++	}
++
++	msgInfo := &types.MessageInfo{
++		MessageSource: types.MessageSource{
++			Chat:     chatJid,
++			Sender:   senderJid,
++			IsFromMe: fromMe,
++			IsGroup:  isGroup,
++		},
++		ID: types.MessageID(msgId),
++	}
++
++	req := &mediaRetryRequest{connId: connId, chatId: chatId, msgId: msgId, fileId: fileId, info: info, action: action}
++	mediaRetryMutex.Lock()
++	if old, exists := mediaRetryPending[msgId]; exists {
++		// already waiting for this one
++		mediaRetryMutex.Unlock()
++		_ = old
++		return true
++	}
++	mediaRetryPending[msgId] = req
++	req.timer = time.AfterFunc(mediaRetryTimeout, func() {
++		if takeMediaRetry(msgId) != nil {
++			LOG_WARNING(fmt.Sprintf("media retry: no answer from phone for %s", msgId))
++			CWmNewMessageFileNotify(connId, chatId, msgId, fileId, "", FileStatusDownloadFailed, action)
++		}
++	})
++	mediaRetryMutex.Unlock()
++
++	if err := client.SendMediaRetryReceipt(context.TODO(), msgInfo, info.MediaKey); err != nil {
++		LOG_WARNING(fmt.Sprintf("media retry: request failed for %s: %v", msgId, err))
++		if r := takeMediaRetry(msgId); r != nil {
++			r.timer.Stop()
++		}
++		return false
++	}
++
++	LOG_DEBUG(fmt.Sprintf("media retry: requested re-upload of %s", msgId))
++	return true
++}
++
++func takeMediaRetry(msgId string) *mediaRetryRequest {
++	mediaRetryMutex.Lock()
++	defer mediaRetryMutex.Unlock()
++	req, ok := mediaRetryPending[msgId]
++	if !ok {
++		return nil
++	}
++	delete(mediaRetryPending, msgId)
++	return req
++}
++
++// HandleMediaRetry handles the phone's answer to a media retry request.
++func HandleMediaRetry(connId int, evt *events.MediaRetry) {
++	req := takeMediaRetry(string(evt.MessageID))
++	if req == nil {
++		return
++	}
++	req.timer.Stop()
++
++	fail := func(reason string) {
++		LOG_WARNING(fmt.Sprintf("media retry: %s for %s", reason, req.msgId))
++		CWmNewMessageFileNotify(req.connId, req.chatId, req.msgId, req.fileId, "", FileStatusDownloadFailed, req.action)
++	}
++
++	retryData, err := whatsmeow.DecryptMediaRetryNotification(evt, req.info.MediaKey)
++	if err != nil {
++		fail(fmt.Sprintf("decrypt error %v", err))
++		return
++	}
++	if retryData.GetResult() != waMmsRetry.MediaRetryNotification_SUCCESS || len(retryData.GetDirectPath()) == 0 {
++		fail(fmt.Sprintf("phone could not re-upload (result %v)", retryData.GetResult()))
++		return
++	}
++
++	client := GetClient(req.connId)
++	if client == nil {
++		fail("client is nil")
++		return
++	}
++
++	req.info.DirectPath = retryData.GetDirectPath()
++	req.info.Url = ""
++	CWmSetStatus(req.connId, FlagFetching)
++	data, err := DownloadFromFileInfo(client, req.info)
++	CWmClearStatus(req.connId, FlagFetching)
++	if err != nil {
++		fail(fmt.Sprintf("download error %v", err))
++		return
++	}
++	if err := os.WriteFile(req.info.TargetPath, data, 0600); err != nil {
++		fail(fmt.Sprintf("write error %v", err))
++		return
++	}
++
++	// store the new direct path, so a later download doesn't need another retry
++	newFileId := req.fileId
++	if bytes, err := json.Marshal(req.info); err == nil {
++		newFileId = string(bytes)
++	}
++
++	LOG_DEBUG(fmt.Sprintf("media retry: downloaded %s", req.msgId))
++	CWmNewMessageFileNotify(req.connId, req.chatId, req.msgId, newFileId, req.info.TargetPath, FileStatusDownloaded, req.action)
++}
+diff --git a/lib/wmchat/src/wmchat.cpp b/lib/wmchat/src/wmchat.cpp
+index 660cbf3b..9703e643 100644
+--- a/lib/wmchat/src/wmchat.cpp
++++ b/lib/wmchat/src/wmchat.cpp
+@@ -611,10 +611,22 @@ void WmChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
+         std::string fileId = downloadFileRequest->fileId;
+         DownloadFileAction downloadFileAction = downloadFileRequest->downloadFileAction;
+ 
++        // sender and direction, needed to ask the phone to re-upload expired media
++        std::string senderId;
++        int fromMe = 0;
++        std::vector<ChatMessage> chatMessages;
++        if (MessageCache::GetOneMessage(m_ProfileId, chatId, msgId, chatMessages))
++        {
++          senderId = chatMessages.front().senderId;
++          fromMe = chatMessages.front().isOutgoing ? 1 : 0;
++        }
++
+         CWmDownloadFile(m_ConnId,
+                         const_cast<char*>(chatId.c_str()),
+                         const_cast<char*>(msgId.c_str()),
+                         const_cast<char*>(fileId.c_str()),
++                        const_cast<char*>(senderId.c_str()),
++                        fromMe,
+                         downloadFileAction
+                         );
+       }
