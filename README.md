@@ -606,6 +606,7 @@ trace), `NCHAT_UI_FAKE_SYNC=1` (preview the sync indicator), `NCHAT_UI_EMOJI_VER
 | M9 | In-app audio player, Open with…, app icon, Linux installers (.deb/.rpm/Arch/tar.gz/AppImage) | ✅ done |
 | M10 | Channels + Status tabs, voice-note recording (sent as real voice notes), drag & drop and paste of files with confirmation | ✅ done (v0.2.0) |
 | v0.2.1 | Fixes: window froze briefly on new messages / opening a chat (tray update and image decoding moved off the UI thread); short chats sit at the bottom; the view stays at the bottom while images and new messages load | ✅ done |
+| v0.2.2 | Fix: uninstalling the user-local install (`scripts/install.sh` or the tarball's `install.sh`) left a stale icon cache, so a later system install showed a generic icon in the dock and app menu | ✅ done |
 | M11 | @mentions, animated stickers, video preview, Telegram voice notes, macOS build + menu-bar icon, upstream canary CI | open |
 | nchat | Media retry for history-synced WhatsApp media | ✅ carried patch; to propose upstream |
 | nchat | History-sync percentage | needs an nchat change (could join the same patch) |
